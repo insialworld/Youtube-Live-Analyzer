@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>YouTube Live Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.png') }}">
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+
+<!-- HEADER -->
+<div class="bg-white shadow py-4">
+  <div class="max-w-5xl mx-auto px-4 flex items-center justify-between">
+
+    <!-- LEFT LOGO -->
+    <a href="/" class="flex items-center gap-2">
+      <img src="/static/logo.png" class="w-20 h-20 rounded-md" alt="logo">
+    </a>
+
+    <!-- CENTER TITLE -->
+    <a href="/" class="text-center flex-1">
+      <h1 class="text-2xl font-semibold">YouTube Live Analyzer</h1>
+      <p class="text-gray-600 text-sm -mt-1">Realtime data</p>
+    </a>
+
+    <!-- RIGHT EMPTY PLACEHOLDER -->
+    <div class="w-10"></div>
+  </div>
+</div>
+
+<div class="max-w-5xl mx-auto px-4 mt-8">
+  <div class="bg-white p-6 rounded-xl shadow">
+
+    <!-- INPUT BAR -->
+    <div class="flex gap-3 justify-center">
+      <input id="channel-input"
+             class="flex-1 border rounded px-4 py-2 max-w-xl"
+             placeholder="Enter channel URL / @handle / UC..." />
+
+      <button id="add-btn"
+              class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow">
+        +
+      </button>
+    </div>
+
+    <!-- PREVIEW CARDS -->
+    <div id="preview-area" class="mt-5 flex gap-6 flex-wrap justify-center"></div>
+
+    <!-- HIDDEN FIELD WRAPPER -->
+    <form id="analyze-form" onsubmit="return false;">
+      <div id="hidden-fields"></div>
+
+      <button id="analyze-btn"
+              class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 mt-6">
+        Analyze Channels
+      </button>
+    </form>
+
+  </div>
+
+  <!-- LOADING -->
+  <div id="loading" class="hidden text-center mt-6">
+    <div class="text-xl text-gray-700 animate-pulse">Analyzing… please wait ⏳</div>
+  </div>
+
+  <!-- RESULTS RENDERED HERE -->
+  <div id="results-section" class="mt-10"></div>
+
+  <!-- FOOTER -->
+  <footer class="mt-12 text-center text-sm text-gray-600">
+    <p class="font-semibold">An Insial Product</p>
+    <p class="mt-2">
+      <a href="/privacy" class="underline">Privacy Policy</a> ·
+      <a href="/terms" class="underline">Terms of Use</a> ·
+      <a href="/disclaimer" class="underline">Disclaimer</a>
+    </p>
+  </footer>
+
+</div>
+
+<!-- JS LOGIC -->
+<script>
+const addBtn = document.getElementById("add-btn");
+const analyzeBtn = document.getElementById("analyze-btn");
+const input = document.getElementById("channel-input");
+const previewArea = document.getElementById("preview-area");
+const hiddenFields = document.getElementById("hidden-fields");
+const resultsSection = document.getElementById("results-section");
+const loading = document.getElementById("loading");
+
+// Create Preview Card
+function createPreviewCard(data) {
+  const id = data.channel_id || ("id_" + Math.random().toString(36).slice(2));
+  if (document.getElementById("hidden-" + id)) return alert("Already added");
+
+  const card = document.createElement("div");
+  card.className = "relative bg-white p-4 rounded-xl shadow flex flex-col items-center w-40";
+
+  const del = document.createElement("button");
+  del.innerHTML = "×";
+  del.className = "absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs";
+  del.onclick = () => {
+    document.getElementById("hidden-" + id)?.remove();
+    card.remove();
+  };
+  card.appendChild(del);
+
+  const img = document.createElement("img");
+  img.src = data.profile_pic || "";
+  img.className = "w-16 h-16 rounded-full shadow";
+  card.appendChild(img);
+
+  const title = document.createElement("div");
+  title.className = "mt-2 font-medium text-sm text-center";
+  title.innerText = data.title || "Unknown";
+  card.appendChild(title);
+
+  previewArea.appendChild(card);
+
+  const hidden = document.createElement("input");
+  hidden.type = "hidden";
+  hidden.name = "channels";
+  hidden.id = "hidden-" + id;
+  hidden.value = data.channel_id;
+  hiddenFields.appendChild(hidden);
+}
+
+// Add Button → Preview API
+addBtn.addEventListener("click", async () => {
+  const val = input.value.trim();
+  if (!val) return alert("Enter channel URL or @handle");
+  if (previewArea.children.length >= 5) return alert("Max 5 channels allowed");
+
+  addBtn.disabled = true;
+  addBtn.textContent = "...";
+  try {
+    const res = await fetch("/preview", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ input: val }),
+    });
+    const json = await res.json();
+    if (!json.success) return alert(json.error || "Preview failed");
+    createPreviewCard(json);
+    input.value = "";
+  } catch (err) {
+    alert("Preview failed: " + (err.message || err));
+  }
+  addBtn.disabled = false;
+  addBtn.textContent = "+";
+});
+
+// Render Results
+function renderResults(results) {
+  resultsSection.innerHTML = "";
+
+  const cols = Math.max(1, results.length);
+  let html = `
+    <h2 class="text-center text-2xl font-semibold mb-6">Analysis Results</h2>
+    <div class="flex justify-center">
+      <div class="grid gap-6" style="grid-template-columns: repeat(${cols}, minmax(260px, 360px));">
+  `;
+
+  for (const ch of results) {
+    let originalityBlock = "";
+    if (ch.originality_score >= 90) {
+      originalityBlock = `
+        <div class="mt-2 bg-green-50 p-3 rounded text-xs text-gray-800">
+          <b>Originality summary:</b>
+          <ul class="list-disc pl-5 mt-2">
+            ${ch.originality_explanation.map(x => `<li>${x}</li>`).join("")}
+          </ul>
+        </div>`;
+    } else {
+      originalityBlock = `
+        <div class="mt-2 bg-gray-50 p-3 rounded text-xs text-gray-700">
+          <b>Why low?</b>
+          <ul class="list-disc pl-5 mt-2">
+            ${ch.originality_explanation.map(x => `<li>${x}</li>`).join("")}
+          </ul>
+        </div>`;
+    }
+
+    html += `
+      <div class="bg-white p-6 rounded-xl shadow text-center">
+        <img src="${ch.profile_pic}" class="w-24 h-24 rounded-full mx-auto shadow" alt="pic">
+        <h3 class="mt-3 font-bold text-lg">${ch.title || "Untitled"}</h3>
+
+        <div class="text-left text-sm mt-3 space-y-1">
+          <p><b>Subscribers:</b> ${ch.subscribers_fmt}</p>
+          <p><b>Monetization:</b> ${ch.monetization}</p>
+          <p><b>Originality score:</b> ${ch.originality_score}%</p>
+
+          ${originalityBlock}
+
+          <p><b>Total Shorts:</b> ${ch.shorts_count}</p>
+          <p><b>Total Videos:</b> ${ch.videos_count}</p>
+
+          <p><b>Total Shorts Views (lifetime):</b> ${ch.total_shorts_views_lifetime_fmt}</p>
+          <p><b>Total Video Views (lifetime):</b> ${ch.total_long_views_lifetime_fmt}</p>
+
+          <p><b>Shorts (30d):</b> ${ch.shorts_30d_count_fmt} — ${ch.total_shorts_views_30d_fmt} views</p>
+          <p><b>Videos (30d):</b> ${ch.videos_30d_count_fmt} — ${ch.total_long_views_30d_fmt} views</p>
+
+          <p><b>Shorts frequency:</b> ${ch.shorts_frequency_text}</p>
+          <p><b>Videos frequency:</b> ${ch.videos_frequency_text}</p>
+          <p><b>Total uploads / week (30d):</b> ${ch.uploads_per_week_recent}</p>
+
+          <p><b>Avg Short Duration:</b> ${ch.avg_short_duration_human}</p>
+          <p><b>Avg Long Duration:</b> ${ch.avg_long_duration_human}</p>
+
+          <p><b>Last Video:</b> ${ch.last_uploaded_video}</p>
+          <p><b>Last Short:</b> ${ch.last_uploaded_short}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  html += `</div></div>`;
+  resultsSection.innerHTML = html;
+}
+
+// Analyze → /api/analyze
+analyzeBtn.addEventListener("click", async () => {
+  const channels = [...document.querySelectorAll("input[name='channels']")].map(el => el.value).filter(Boolean);
+  if (channels.length === 0) return alert("Add at least one channel");
+  loading.classList.remove("hidden");
+  try {
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ channels }),
+    });
+    const json = await response.json();
+    if (!json.success) {
+      alert(json.error || "Analysis failed");
+    } else {
+      renderResults(json.results);
+      setTimeout(()=> window.scrollTo({ top: resultsSection.offsetTop - 20, behavior: "smooth" }), 100);
+    }
+  } catch (err) {
+    alert("Analyze failed: " + (err.message || err));
+  }
+  loading.classList.add("hidden");
+});
+</script>
+
+</body>
+</html>
